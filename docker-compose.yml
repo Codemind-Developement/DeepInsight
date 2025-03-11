@@ -1,0 +1,160 @@
+services:
+  codemind_mysql:
+    image: codeminddevelopment/mysql:lastest
+    container_name: codemind_mysql
+    restart: always
+    env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_DB_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_DB_USER}
+      MYSQL_PASSWORD: ${MYSQL_DB_PASSWORD}
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - ./codemind_mysql/mysql_data:/var/lib/mysql:rw
+    ports:
+      - ${MYSQL_PORT:-3306}:3306
+    networks:
+      - monitoring_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "--password=${MYSQL_DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  codemind_migration:
+    image: codeminddevelopment/migration:lastest
+    container_name: codemind_migration
+    depends_on:
+      codemind_mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    networks:
+      - monitoring_network
+
+  codemind_zookeeper:
+    image: codeminddevelopment/zookeeper:lastest
+    container_name: codemind_zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_CLIENT_PORT}
+      ZOOKEEPER_TICK_TIME: ${ZOOKEEPER_TICK_TIME}
+    networks:
+      - monitoring_network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "${ZOOKEEPER_CLIENT_PORT}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  codemind_kafka:
+    image: codeminddevelopment/kafka:lastest
+    container_name: codemind_kafka
+    restart: always
+    depends_on:
+      codemind_zookeeper:
+        condition: service_healthy
+    ports:
+      - ${KAFKA_PORT}:${KAFKA_PORT}
+      - ${KAFKA_EX_PORT}:${KAFKA_EX_PORT}
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: codemind_zookeeper:2181
+      ZOOKEEPER_SASL_ENABLED: "false"
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://codemind_kafka:${KAFKA_PORT:-9092}, EXTERNAL://${KAFKA_DOCKER_HOST_IP:-127.0.0.1}:${KAFKA_EX_PORT:-19092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT, EXTERNAL:SASL_PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/configs/kafka_server_jaas.conf"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring_network
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z codemind_kafka ${KAFKA_PORT:-9092} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  codemind_central:
+    restart: always
+    container_name: codemind_central
+    image: codeminddevelopment/central:lastest
+    ports:
+      - ${CENTRAL_PORT}:80
+      - ${CENTRAL_SSL_PORT}:443
+      - ${CENTRAL_LISTEN_PORT}:4433
+    env_file:
+      - .env
+    volumes:
+      - ./codemind_central/root-data/user_files:/opt/meshcentral/meshcentral-files
+      - ./codemind_central/root-data/backup:/opt/meshcentral/meshcentral-backups
+      - ./codemind_central/root-data/records:/opt/meshcentral/meshcentral-recordings
+    networks:
+      - monitoring_network
+
+  codemind_server:
+    container_name: codemind_server
+    image: codeminddevelopment/server:lastest
+    ports:
+      - ${SERVER_PORT}:5985
+      - ${SERVER_SSL_PORT}:7005
+    depends_on:
+      codemind_migration:
+        condition: service_started
+      codemind_mysql:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: "http://+:5985;https://+:7005"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT}
+      ASPNETCORE_Kestrel__Certificates__Default__Path: ${ASPNETCORE_Kestrel__Certificates__Default__Path}
+      ASPNETCORE_Kestrel__Certificates__Default__Password: ${ASPNETCORE_Kestrel__Certificates__Default__Password}
+    volumes:
+      - ./codemind_server/CoreV2.MVC/Logs:/app/Logs:rw
+      - ./codemind_server/wwwroot:/app/wwwroot:rw
+    restart: always
+    env_file:
+      - .env
+    networks:
+      - monitoring_network
+
+  codemind_admin:
+    container_name: codemind_admin
+    image: codeminddevelopment/admin:lastest
+    ports:
+      - ${ADMIN_PORT}:3000
+    depends_on:
+      - codemind_server
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    restart: always
+    networks:
+      - monitoring_network
+
+  codemind_watch_server:
+    image: codeminddevelopment/watch_server:lastest
+    container_name: codemind_watch_server
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - 5600:5600
+    depends_on:
+      codemind_kafka:
+        condition: service_healthy
+      codemind_mysql:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring_network
+
+networks:
+  monitoring_network:
+    driver: bridge
+

@@ -1,0 +1,12 @@
+**/node_modules/
+**/dist
+.git
+npm-debug.log
+.coverage
+.coverage.*
+.env
+.aws
+.next
+.venv
+.codemind_admin/.env
+.codemind_watcher/aw-server/.venv

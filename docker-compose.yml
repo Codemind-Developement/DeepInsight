@@ -2,8 +2,8 @@ services:
   codemind_mysql:
     image: codeminddevelopment/mysql:lastest
     container_name: codemind_mysql
-    restart: always
-    env_file: .env
+    restart: unless-stopped
+    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_DB_ROOT_PASSWORD}
       MYSQL_USER: ${MYSQL_DB_USER}
@@ -27,15 +27,19 @@ services:
     depends_on:
       codemind_mysql:
         condition: service_healthy
-    env_file:
-      - .env
+    platform: linux/amd64
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
     networks:
       - monitoring_network
 
   codemind_zookeeper:
     image: codeminddevelopment/zookeeper:lastest
     container_name: codemind_zookeeper
-    restart: always
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_CLIENT_PORT}
       ZOOKEEPER_TICK_TIME: ${ZOOKEEPER_TICK_TIME}
@@ -50,7 +54,7 @@ services:
   codemind_kafka:
     image: codeminddevelopment/kafka:lastest
     container_name: codemind_kafka
-    restart: always
+    restart: unless-stopped
     depends_on:
       codemind_zookeeper:
         condition: service_healthy
@@ -80,15 +84,22 @@ services:
       retries: 5
 
   codemind_central:
-    restart: always
+    restart: unless-stopped
     container_name: codemind_central
     image: codeminddevelopment/central:lastest
     ports:
       - ${CENTRAL_PORT}:80
       - ${CENTRAL_SSL_PORT}:443
       - ${CENTRAL_LISTEN_PORT}:4433
-    env_file:
-      - .env
+    platform: linux/amd64
+    depends_on:
+      codemind_mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
     volumes:
       - ./codemind_central/root-data/user_files:/opt/meshcentral/meshcentral-files
       - ./codemind_central/root-data/backup:/opt/meshcentral/meshcentral-backups
@@ -115,9 +126,8 @@ services:
     volumes:
       - ./codemind_server/CoreV2.MVC/Logs:/app/Logs:rw
       - ./codemind_server/wwwroot:/app/wwwroot:rw
-    restart: always
-    env_file:
-      - .env
+    restart: unless-stopped
+    platform: linux/amd64
     networks:
       - monitoring_network
 
@@ -128,20 +138,27 @@ services:
       - ${ADMIN_PORT}:3000
     depends_on:
       - codemind_server
-    env_file:
-      - .env
+    platform: linux/amd64
     environment:
       NODE_ENV: production
-    restart: always
+      NEXT_PUBLIC_IDENTITY_URL: ${NEXT_PUBLIC_IDENTITY_URL}
+      NEXT_PUBLIC_COOKIE_DOMAIN: ${NEXT_PUBLIC_COOKIE_DOMAIN}
+      ENCRYPT_SECRET_KEY: ${ENCRYPT_SECRET_KEY}
+      ENCRYPT_IV: ${ENCRYPT_IV}
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_PORT: ${DB_PORT}
+    restart: unless-stopped
     networks:
       - monitoring_network
 
   codemind_watch_server:
     image: codeminddevelopment/watch_server:lastest
     container_name: codemind_watch_server
-    restart: always
-    env_file:
-      - .env
+    restart: unless-stopped
+    platform: linux/amd64
     ports:
       - 5600:5600
     depends_on:

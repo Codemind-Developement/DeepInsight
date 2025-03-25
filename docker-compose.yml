@@ -1,9 +1,8 @@
 services:
   codemind_mysql:
-    image: codeminddevelopment/mysql:lastest
+    image: mysql:8.0.37
     container_name: codemind_mysql
     restart: unless-stopped
-    platform: linux/amd64
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_DB_ROOT_PASSWORD}
       MYSQL_USER: ${MYSQL_DB_USER}
